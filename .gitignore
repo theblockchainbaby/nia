@@ -1,0 +1,22 @@
+# Local state — never committed
+~/.nia/
+.nia/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Editor
+.vscode/
+.idea/
+.DS_Store
+
+# Secrets
+.env
+.env.local
+secrets/

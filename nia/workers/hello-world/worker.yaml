@@ -1,0 +1,31 @@
+name: hello-world
+version: 0.1.0
+schema_version: 0.1
+description: |-
+  Smoke-test worker. Demonstrates a deterministic action and a judgment
+  action whose condition is never true, so the LLM step is always skipped.
+author: york@yorksims.com
+license: AGPL-3.0-or-later
+tags: [demo, smoke-test]
+
+trigger:
+  manual: true
+
+config:
+  greeting: "Hello from Nia."
+
+actions:
+  - id: greet
+    kind: deterministic
+    impl: builtin:debug.echo
+    inputs:
+      message: "{{ config.greeting }}"
+
+  - id: maybe-think
+    kind: judgment
+    # Will never fire — the demonstration is that judgment is GATED, not
+    # invoked-by-default. This is the architectural thesis in worker form.
+    condition: "actions.greet.results.echoed == 'never'"
+    impl: builtin:debug.echo
+    inputs:
+      message: "(this LLM step is skipped)"

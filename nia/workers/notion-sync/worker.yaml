@@ -1,0 +1,44 @@
+name: notion-sync
+version: 0.1.0
+schema_version: 0.1
+description: |-
+  Sync recent sent/received email, new blog posts, and Stripe subscription
+  events into Notion. Twice daily. Zero LLM. Keeps CRM current with no
+  manual data entry.
+author: york@yorksims.com
+license: AGPL-3.0-or-later
+tags: [notion, sync, deterministic-only]
+
+trigger:
+  cron: "0 6,18 * * *"
+
+permissions:
+  - imap:read
+  - notion:write
+  - filesystem:read:any-git-repo
+  - stripe:read
+
+config:
+  accounts_file: "~/.nia/workers/notion-sync/accounts.yaml"
+  repos:
+    - name: my-site
+      path: "/path/to/your/site-repo"
+      business: Book
+      blog_glob: "app/blog/*/page.tsx"
+
+actions:
+  - id: email-to-notion
+    kind: deterministic
+    impl: builtin:notion.email_sync
+    inputs:
+      accounts: "{{ config.accounts_file }}"
+
+  - id: git-to-notion
+    kind: deterministic
+    impl: builtin:notion.git_sync
+    inputs:
+      repos: "{{ config.repos }}"
+
+  - id: stripe-to-notion
+    kind: deterministic
+    impl: builtin:notion.stripe_sync

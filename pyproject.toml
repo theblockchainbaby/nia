@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nia"
+version = "0.1.0"
+description = "Local operations runtime. Deterministic by default. AI only when needed."
+readme = "README.md"
+license = { text = "AGPL-3.0-or-later" }
+requires-python = ">=3.10"
+authors = [{ name = "York Sims", email = "york@yorksims.com" }]
+keywords = ["operations", "automation", "runtime", "local-first", "deterministic"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: System Administrators",
+  "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+  "Operating System :: POSIX",
+  "Operating System :: MacOS",
+  "Programming Language :: Python :: 3",
+  "Topic :: System :: Systems Administration",
+]
+
+# Lean by design. Three runtime dependencies. No "AI framework" bloat.
+dependencies = [
+  "PyYAML>=6.0",        # manifest parsing
+  "rich>=13.0",         # CLI output (single dep, makes inspect shine)
+]
+
+[project.optional-dependencies]
+# Workers that need judgment steps pull this in. Core runtime does not require it.
+judgment = ["anthropic>=0.40"]
+# Reference workers that need PDF rendering (e.g. morning-ops).
+render = ["fpdf2>=2.7"]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[project.scripts]
+nia = "nia.cli.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["nia*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

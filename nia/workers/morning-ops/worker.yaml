@@ -1,0 +1,70 @@
+name: morning-ops
+version: 0.1.0
+schema_version: 0.1
+description: |-
+  Overnight email sweep + open Notion reminders → daily brief PDF →
+  delivered via iMessage at 3 AM. Zero LLM calls. Zero token cost.
+  The architectural template for deterministic-first worker design.
+author: york@yorksims.com
+license: AGPL-3.0-or-later
+tags: [email, notion, daily, brief, deterministic-only]
+
+trigger:
+  cron: "0 3 * * *"
+
+permissions:
+  - imap:read
+  - notion:read
+  - filesystem:write:~/.nia/briefs
+  - imessage:send
+
+config:
+  # Path to a private YAML file with IMAP accounts. Never committed.
+  # Shape:
+  #   accounts:
+  #     - { label, user, pass, server, sent_folder }
+  accounts_file: "~/.nia/workers/morning-ops/accounts.yaml"
+  output_dir: "~/.nia/briefs"
+  recipient: "+15551234567"
+  shift_note: ""              # e.g., "WALMART SHIFT: 5 AM - 3:30 PM"
+  # macOS-only: name of the Shortcut that sends a file via Messages.
+  # Required because AppleScript can't deliver attachments on modern macOS.
+  # See docs/imessage-setup.md for the 90-second Shortcut setup.
+  shortcut_name: "Send Brief"
+  # Optional message body. Leave empty unless the Shortcut is configured
+  # to accept BOTH a file and a text input — AppleScript text routes through
+  # the wrong iMessage handle (Apple ID instead of phone) on multi-handle
+  # accounts, so we send file-only by default.
+  brief_body: ""
+
+actions:
+  - id: sweep-email
+    kind: deterministic
+    impl: builtin:email.sweep_recent
+    inputs:
+      accounts: "{{ config.accounts_file }}"
+      since_hours: 48
+
+  - id: pull-reminders
+    kind: deterministic
+    impl: builtin:notion.due_reminders
+    inputs:
+      max_items: 5
+
+  - id: render-brief
+    kind: deterministic
+    impl: builtin:render.morning_brief_pdf
+    inputs:
+      email: "{{ actions.sweep-email.results }}"
+      notion: "{{ actions.pull-reminders.results }}"
+      output_dir: "{{ config.output_dir }}"
+      shift_note: "{{ config.shift_note }}"
+
+  - id: deliver
+    kind: deterministic
+    impl: builtin:imessage.send_pdf
+    inputs:
+      pdf_path: "{{ actions.render-brief.results.pdf_path }}"
+      to: "{{ config.recipient }}"
+      body: "{{ config.brief_body }}"
+      shortcut_name: "{{ config.shortcut_name }}"
