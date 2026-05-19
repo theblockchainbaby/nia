@@ -22,7 +22,7 @@ classifiers = [
   "Topic :: System :: Systems Administration",
 ]
 
-# Lean by design. Three runtime dependencies. No "AI framework" bloat.
+# Lean by design. Two runtime dependencies. No "AI framework" bloat.
 dependencies = [
   "PyYAML>=6.0",        # manifest parsing
   "rich>=13.0",         # CLI output (single dep, makes inspect shine)

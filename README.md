@@ -9,28 +9,33 @@ Nia is a local operations runtime. Workers run on triggers or schedules, execute
 ## Install
 
 ```bash
-curl -fsSL https://nia.run/install | bash
-```
-
-Or from source:
-
-```bash
 git clone https://github.com/theblockchainbaby/nia
 cd nia
 pip install -e .
 ```
 
+Requires Python 3.10+. The core runtime has two dependencies, PyYAML and rich.
+Optional extras pull in only what a given worker needs:
+
+```bash
+pip install -e ".[render]"     # workers that render PDFs
+pip install -e ".[judgment]"   # workers with LLM judgment steps
+```
+
+macOS is fully supported (launchd, iMessage). The Linux adapter is in progress.
+
 ## Five-minute tour
 
 ```bash
-nia worker list                          # see what's installed
-nia worker install morning-ops           # install a worker from the built-in registry
-nia inspect worker morning-ops           # read its mind: triggers, actions, judgment conditions
-nia dry-run worker morning-ops           # execute with all side effects mocked
-nia worker enable morning-ops            # schedule it
-nia status                               # what's running, last run times, next runs
-nia logs morning-ops                     # tail the run history
+nia worker list                       # list available workers
+nia inspect worker hello-world         # show its triggers, actions, conditions, recent runs
+nia dry-run worker hello-world         # execute it with all side effects mocked
+nia worker run hello-world             # run it once, for real
+nia status                             # runtime status and recent runs
+nia logs hello-world                   # tail recent runs for this worker
 ```
+
+Every command above works on a clean install. `hello-world` is the bundled smoke-test worker. `nia worker install` and `nia worker enable` also exist, but in v0.1 they print setup instructions rather than acting on their own; automated registry install and scheduling land in v0.2.
 
 ## Why a runtime instead of an agent?
 
@@ -52,53 +57,53 @@ You get:
 
 ## What a worker looks like
 
+This is the complete `hello-world` worker that ships in the repo:
+
 ```yaml
-# workers/morning-ops/worker.yaml
-name: morning-ops
+name: hello-world
 version: 0.1.0
-description: Pull overnight email + Notion, generate a daily brief PDF.
+schema_version: 0.1
+description: |-
+  Smoke-test worker. Demonstrates a deterministic action and a judgment
+  action whose condition is never true, so the LLM step is always skipped.
+author: york@yorksims.com
+license: AGPL-3.0-or-later
+tags: [demo, smoke-test]
+
 trigger:
-  cron: "0 6 * * *"
-permissions:
-  - notion:read
-  - gmail:read
-  - filesystem:write:~/.nia/briefs
+  manual: true
+
+config:
+  greeting: "Hello from Nia."
+
 actions:
-  - id: sweep-email
+  - id: greet
     kind: deterministic
-    impl: builtin:email.sweep_inbox
+    impl: builtin:debug.echo
     inputs:
-      accounts: [you@example.com, team@example.com]
-      since: 24h
-  - id: pull-notion-reminders
-    kind: deterministic
-    impl: builtin:notion.due_reminders
-  - id: classify-unknowns
+      message: "{{ config.greeting }}"
+
+  - id: maybe-think
     kind: judgment
-    condition: actions.sweep-email.results.unmatched > 0
-    impl: builtin:llm.classify
+    # Will never fire — the demonstration is that judgment is GATED, not
+    # invoked-by-default. This is the architectural thesis in worker form.
+    condition: "actions.greet.results.echoed == 'never'"
+    impl: builtin:debug.echo
     inputs:
-      model: claude-haiku-4-5
-      categories: [job-reply, customer, vendor, newsletter, other]
-  - id: render-brief
-    kind: deterministic
-    impl: builtin:render.pdf
-    inputs:
-      template: builtin:morning-brief.md
-      output: ~/.nia/briefs/{date}.pdf
+      message: "(this LLM step is skipped)"
 ```
 
-`kind: deterministic` runs pure code. `kind: judgment` invokes an LLM, but only when the `condition` evaluates true. Most runs will skip every judgment step.
+It is the smallest worker in the repo, and it still carries the whole idea. `greet` is `kind: deterministic`: pure code, no model. `maybe-think` is `kind: judgment`, but its `condition` is never true, so the step is skipped on every run. Judgment is declared, conditional, and skipped by default. The bundled `morning-ops` and `notion-sync` workers have no judgment steps at all.
+
+See [docs/manifest.md](docs/manifest.md) for the full manifest spec.
 
 ## Reference workers
 
-Five workers ship in the repo as both reference implementations and useful day-one tools:
+Three workers ship in the repo, as both reference implementations and working tools:
 
-- **morning-ops** — overnight email + Notion → daily brief PDF
-- **notion-sync** — sent/received email + git commits + Stripe events → Notion CRM
-- **inbox-triage** — classify inbound, flag unanswered > 24h, escalate substantive replies
-- **stripe-digest** — daily subscription movement, MRR, churn signals
-- **github-review** — PRs needing your review, stale branches, CI failures
+- **hello-world** — smoke test: one deterministic action, one gated judgment action
+- **morning-ops** — overnight email and open Notion reminders, rendered to a daily brief PDF
+- **notion-sync** — sent and received email, new git commits, and Stripe events, synced into Notion
 
 Each runs locally. Each is deterministic-first. Each is auditable via `nia inspect`.
 
@@ -106,16 +111,16 @@ Each runs locally. Each is deterministic-first. Each is auditable via `nia inspe
 
 See [docs/architecture.md](docs/architecture.md) for the full system design. The short version:
 
-- **Runtime core** — manifest loader, action dispatcher, judgment escalation, run state capture
+- **Runtime core** — manifest loader, condition evaluator, action executor, run-state capture
 - **Workers** — folders containing `worker.yaml` + optional helper code
-- **Adapters** — OS-specific bits (Mac: launchd + iMessage. Linux: systemd + signal-cli)
+- **Adapters** — OS-specific bits (macOS: launchd + iMessage; Linux: systemd + signal-cli, planned)
 - **Memory** — local JSON state for last-run markers, dedup sets, run history
 
-Three runtime dependencies. No AI framework. No orchestration sprawl. Designed to feel like `systemd` or `cron`, not LangChain.
+Two runtime dependencies. No AI framework. No orchestration sprawl. Designed to feel like `systemd` or `cron`, not LangChain.
 
 ## Status
 
-**v0.1.0 — May 2026.** Pre-release. Manifest spec is locked. Mac adapter works. Linux adapter minimum-viable. Worker registry is `git clone`-based; a richer install mechanism comes in v0.2.
+**v0.1.0 — May 2026.** Pre-release. The manifest spec is locked. The macOS adapter works. The Linux adapter is stubbed. Worker install is `git clone`-based; a richer install mechanism comes in v0.2.
 
 ## License
 
@@ -123,4 +128,4 @@ Three runtime dependencies. No AI framework. No orchestration sprawl. Designed t
 
 ---
 
-Built by [York Sims](https://yorksims.com). Nia runs Caipher AI LLC's operations in production 24/7 — every release ships only after running clean for at least 7 days against real workloads.
+Built by [York Sims](https://yorksims.com). The `morning-ops` and `notion-sync` workers in this repo are the ones I built Nia to run: my own morning brief and CRM sync.
