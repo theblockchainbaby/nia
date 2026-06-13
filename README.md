@@ -35,7 +35,7 @@ nia status                             # runtime status and recent runs
 nia logs hello-world                   # tail recent runs for this worker
 ```
 
-Every command above works on a clean install. `hello-world` is the bundled smoke-test worker. `nia worker install` and `nia worker enable` also exist, but in v0.1 they print setup instructions rather than acting on their own; automated registry install and scheduling land in v0.2.
+Every command above works on a clean install. `hello-world` is the bundled smoke-test worker. As of v0.2, `nia worker install <name>` copies a bundled worker manifest into `~/.nia/workers/<name>/` and scaffolds the credential and config templates the worker needs. `nia worker enable <name>` generates a launchd plist from the worker's cron trigger and loads it (macOS; Linux/systemd is on the v0.3 roadmap). The full authoring workflow lives in [docs/worker-authoring.md](docs/worker-authoring.md).
 
 ## Why a runtime instead of an agent?
 
@@ -127,13 +127,14 @@ See [docs/manifest.md](docs/manifest.md) for the full manifest spec.
 
 ## Reference workers
 
-Three workers ship in the repo, as both reference implementations and working tools:
+Four workers ship in the repo, as both reference implementations and working tools:
 
 - **hello-world** — smoke test: one deterministic action, one gated judgment action
 - **morning-ops** — overnight email and open Notion reminders, rendered to a daily brief PDF
 - **notion-sync** — sent and received email, new git commits, and Stripe events, synced into Notion
+- **inbox-triage** — hourly inbox sweep + `kind: judgment` classification of senders via Claude through the condition-gated path (the worker that demonstrates the runtime's central thesis end to end)
 
-Each runs locally. Each is deterministic-first. Each is auditable via `nia inspect`.
+Each runs locally. Each is auditable via `nia inspect`. `morning-ops` and `notion-sync` are deterministic from end to end. `inbox-triage` invokes Claude only when its declared condition evaluates true, so the LLM is dark on every run that has no items to classify.
 
 ## Architecture
 
@@ -148,7 +149,15 @@ Two runtime dependencies. No AI framework. No orchestration sprawl. Designed to 
 
 ## Status
 
-**v0.1.0 — May 2026.** Pre-release. The manifest spec is locked. The macOS adapter works. The Linux adapter is stubbed. Worker install is `git clone`-based; a richer install mechanism comes in v0.2.
+**v0.2.0 — June 2026.** Pre-release. The manifest spec at `schema_version: 0.1` is locked. The macOS adapter works. The Linux adapter is stubbed. CI runs ruff and pytest on every push across Python 3.10, 3.11, and 3.12.
+
+What v0.2 ships on top of v0.1:
+
+- `nia worker install <name>` and `nia worker enable <name>` do real work (manifest copy with scaffolded templates; launchd plist generation and load).
+- `builtin:claude.classify` is the first judgment-class builtin, called only through the manifest's declared `condition:` gate.
+- The `inbox-triage` worker uses it, runs hourly under launchd in production.
+- Soft permission enforcement: a worker manifest's `permissions:` block must cover what its builtins need; decorative permission lists are rejected at load time.
+- 56 tests, all passing on the public CI.
 
 ## License
 
