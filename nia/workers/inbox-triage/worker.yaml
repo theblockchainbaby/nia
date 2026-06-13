@@ -1,0 +1,58 @@
+name: inbox-triage
+version: 0.1.0
+schema_version: 0.1
+description: |-
+  Hourly sweep of recent inbox + Claude classification of senders. The first
+  Nia worker that exercises kind: judgment. The runtime invokes Claude only
+  if the deterministic sweep produced at least one item to classify. The
+  classification result is persisted to the run history as the audit log;
+  no other side effect.
+
+  This worker exists to demonstrate, end to end, that the gated LLM path
+  works as the architecture document claims. The Phase I research will
+  mechanically verify the invariant.
+author: york@yorksims.com
+license: AGPL-3.0-or-later
+tags: [email, judgment, claude, classification]
+
+trigger:
+  cron: "0 * * * *"
+
+permissions:
+  - imap:read
+  - llm:claude
+
+config:
+  accounts_file: "~/.nia/workers/inbox-triage/accounts.yaml"
+  lookback_hours: 1
+  categories:
+    - customer
+    - vendor
+    - recruiter
+    - personal
+    - spam
+    - other
+  instruction: |-
+    You are classifying short email previews. Be conservative; if a message
+    is ambiguous, choose "uncertain". Use "spam" only for clearly
+    promotional or unsolicited bulk mail. "customer" means someone replying
+    about a paid product or active deal. "vendor" means a service provider
+    asking for time or money. "recruiter" means hiring outreach.
+    "personal" means a known friend or family member.
+
+actions:
+  - id: sweep-recent
+    kind: deterministic
+    impl: builtin:email.sweep_recent
+    inputs:
+      accounts: "{{ config.accounts_file }}"
+      since_hours: "{{ config.lookback_hours }}"
+
+  - id: classify
+    kind: judgment
+    condition: "actions.sweep-recent.results.unanswered_count > 0"
+    impl: builtin:claude.classify
+    inputs:
+      items: "{{ actions.sweep-recent.results.unanswered_inbox }}"
+      categories: "{{ config.categories }}"
+      instruction: "{{ config.instruction }}"
