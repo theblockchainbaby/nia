@@ -45,3 +45,9 @@ include = ["nia*"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+
+[tool.ruff.lint]
+# Terse single-line statements are intentional in tokenizer and CLI rendering.
+# E701: `if x: do_y` style.
+# E702: `a; b; c` style.
+ignore = ["E701", "E702"]
