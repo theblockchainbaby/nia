@@ -15,6 +15,7 @@ from typing import Any
 
 import yaml
 
+from . import permissions as _perms
 from .types import (
     SCHEMA_VERSION,
     Action,
@@ -71,6 +72,21 @@ def load(path: Path) -> WorkerManifest:
     trigger = _parse_trigger(raw.get("trigger"), path)
     actions = _parse_actions(raw.get("actions"), path)
     outputs = _parse_outputs(raw.get("outputs", []), path)
+    granted = list(raw.get("permissions") or [])
+
+    # Soft permission enforcement: every action's impl must have its
+    # declared requirements covered by the worker's `permissions:` block.
+    # The bundled actions register their requirements in
+    # nia/runtime/permissions.py. Decorative permissions blocks are
+    # rejected here, at manifest load time.
+    for action in actions:
+        missing = _perms.missing_permissions(action.impl, granted)
+        if missing:
+            raise ManifestError(
+                f"{path}: action {action.id!r} uses impl {action.impl!r} which "
+                f"requires permissions {sorted(missing)} not declared in the "
+                f"worker's `permissions:` block. Add them, or change the impl."
+            )
 
     return WorkerManifest(
         name=name,
@@ -82,7 +98,7 @@ def load(path: Path) -> WorkerManifest:
         license=str(raw.get("license", "")),
         tags=list(raw.get("tags") or []),
         trigger=trigger,
-        permissions=list(raw.get("permissions") or []),
+        permissions=granted,
         config=dict(raw.get("config") or {}),
         actions=actions,
         outputs=outputs,
