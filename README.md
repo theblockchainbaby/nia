@@ -159,9 +159,13 @@ What v0.2 ships on top of v0.1:
 - Soft permission enforcement: a worker manifest's `permissions:` block must cover what its builtins need; decorative permission lists are rejected at load time.
 - 56 tests, all passing on the public CI.
 
-## License
+## Licensing
 
-[AGPL-3.0-or-later](LICENSE). Forks that ship Nia as a hosted service must publish their source.
+Nia is dual-licensed.
+
+**Open source** — [AGPL-3.0-or-later](LICENSE). This is the default and covers all public, internal, and developer-facing use of Nia. Forks that ship Nia as a hosted service must publish their source.
+
+**Commercial** — Available for buyers whose procurement cannot accept AGPL (regulated enterprise, government, healthcare). Contact york@caipherai.com.
 
 ---
 
