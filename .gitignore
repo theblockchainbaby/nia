@@ -20,3 +20,6 @@ build/
 .env
 .env.local
 secrets/
+
+# Government contracting working materials, kept local, never public
+docs/govcon/
