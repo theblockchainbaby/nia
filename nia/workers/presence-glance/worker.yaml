@@ -1,0 +1,41 @@
+name: presence-glance
+version: 0.1.0
+schema_version: "0.1"
+description: |-
+  A sensor capability under enforced restraint. The camera is a declared, gated
+  capability: the `glance` step is kind: judgment and runs only when its
+  condition is true, never on a schedule and never by default. A cheap
+  deterministic motion read decides whether the camera is even considered.
+  `nia dry-run worker presence-glance` shows exactly when it would look while
+  opening no camera. Flip config.simulate_motion to true to watch the gate open.
+author: york@yorksims.com
+license: AGPL-3.0-or-later
+tags: [demo, sensor, capability]
+
+permissions:
+  - sensor:read
+  - camera:read
+
+trigger:
+  manual: true
+
+config:
+  source: front-door
+  # The camera stays shut by default. Flip to true to open the gate.
+  simulate_motion: false
+
+actions:
+  - id: check-motion
+    kind: deterministic
+    impl: builtin:sensor.motion_event
+    inputs:
+      source: "{{ config.source }}"
+      detected: "{{ config.simulate_motion }}"
+
+  - id: glance
+    kind: judgment
+    # The camera fires only here, only when motion was detected this run.
+    condition: "actions.check-motion.results.detected == true"
+    impl: builtin:vision.describe_frame
+    inputs:
+      reason: confirm a person is at the door

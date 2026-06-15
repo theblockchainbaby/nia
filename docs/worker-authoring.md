@@ -90,7 +90,7 @@ actions:
       categories: ["customer", "vendor", "other"]
 ```
 
-If `count` is zero, the LLM is not invoked. The CLI surfaces this as `status: skipped, reason: judgment condition false - LLM not invoked`. That is the structural property Nia stakes.
+If `count` is zero, the LLM is not invoked. The CLI surfaces this as `status: skipped, reason: judgment condition false, step not invoked`. That is the structural property Nia stakes.
 
 ## Templating
 

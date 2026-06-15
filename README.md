@@ -127,12 +127,13 @@ See [docs/manifest.md](docs/manifest.md) for the full manifest spec.
 
 ## Reference workers
 
-Four workers ship in the repo, as both reference implementations and working tools:
+Five workers ship in the repo, as both reference implementations and working tools:
 
 - **hello-world** — smoke test: one deterministic action, one gated judgment action
 - **morning-ops** — overnight email and open Notion reminders, rendered to a daily brief PDF
 - **notion-sync** — sent and received email, new git commits, and Stripe events, synced into Notion
 - **inbox-triage** — hourly inbox sweep + `kind: judgment` classification of senders via Claude through the condition-gated path (the worker that demonstrates the runtime's central thesis end to end)
+- **presence-glance** — a sensor capability under enforced restraint: a deterministic motion read, then a camera `kind: judgment` step that fires only when its condition is true. Capability is not instruction in the camera domain, and a dry run opens no camera
 
 Each runs locally. Each is auditable via `nia inspect`. `morning-ops` and `notion-sync` are deterministic from end to end. `inbox-triage` invokes Claude only when its declared condition evaluates true, so the LLM is dark on every run that has no items to classify.
 
@@ -157,7 +158,7 @@ What v0.2 ships on top of v0.1:
 - `builtin:claude.classify` is the first judgment-class builtin, called only through the manifest's declared `condition:` gate.
 - The `inbox-triage` worker uses it, runs hourly under launchd in production.
 - Soft permission enforcement: a worker manifest's `permissions:` block must cover what its builtins need; decorative permission lists are rejected at load time.
-- 56 tests, all passing on the public CI.
+- 68 tests, all passing on the public CI.
 
 ## Licensing
 

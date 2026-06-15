@@ -37,6 +37,9 @@ BUILTIN_REQUIREMENTS: dict[str, set[str]] = {
     "imessage.send_pdf": {"imessage:send"},
     # render
     "render.morning_brief_pdf": {"filesystem:write"},
+    # sensor (deterministic, cheap) and vision (judgment, camera-gated)
+    "sensor.motion_event": {"sensor:read"},
+    "vision.describe_frame": {"camera:read"},
     # debug — explicit empty for clarity
     "debug.echo": set(),
 }

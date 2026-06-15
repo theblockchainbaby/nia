@@ -112,7 +112,7 @@ def _run_action(action: Action, ctx: dict, *, dry_run: bool) -> ActionResult:
                 started_at=started,
                 finished_at=utc_now(),
                 skipped_reason=(
-                    f"judgment condition {action.condition!r} false — LLM not invoked"
+                    f"judgment condition {action.condition!r} false, step not invoked"
                 ),
             )
 

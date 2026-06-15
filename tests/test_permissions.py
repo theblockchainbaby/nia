@@ -171,7 +171,7 @@ def test_loader_accepts_worker_with_no_permission_requirements(tmp_path):
 
 
 @pytest.mark.parametrize("worker_name", [
-    "hello-world", "morning-ops", "notion-sync", "inbox-triage",
+    "hello-world", "morning-ops", "notion-sync", "inbox-triage", "presence-glance",
 ])
 def test_bundled_workers_pass_permission_check(worker_name):
     """The bundled workers MUST load. If a new builtin is added, the
