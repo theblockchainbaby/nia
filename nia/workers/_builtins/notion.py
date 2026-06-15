@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import time
 from datetime import datetime, timedelta, timezone
 
 from . import _imap, _notion_client as nc
@@ -37,7 +36,19 @@ def due_reminders(*, inputs: dict, context: dict) -> dict:
 
     Inputs:
       max_items: int (default 5)
+
+    On a dry-run, returns mock data and never calls the Notion API.
     """
+    if context.get("dry_run"):
+        return {
+            "reminders": [
+                {"title": "Sample open reminder (dry-run)", "due": "2026-01-01",
+                 "priority": "High", "business": "Example", "status": "Open"},
+            ],
+            "total_open": 1,
+            "dry_run": True,
+        }
+
     max_items = int(inputs.get("max_items", 5))
     res = nc.query_db(
         _resolve("REMINDERS"),
@@ -68,8 +79,13 @@ def email_sync(*, inputs: dict, context: dict) -> dict:
 
     Inputs:
       accounts: list of email account dicts (same shape as email.sweep_recent)
-      dry_run is honored from context — no writes happen if True.
+
+    On a dry-run, returns mock stats and never opens IMAP or calls Notion.
     """
+    if context.get("dry_run"):
+        return {"sent_logged": 0, "inbox_seen": 0, "deals_updated": 0,
+                "errors": [], "dry_run": True}
+
     raw_accounts = inputs.get("accounts") or []
     if isinstance(raw_accounts, str):
         import yaml
@@ -153,7 +169,13 @@ def git_sync(*, inputs: dict, context: dict) -> dict:
 
     Inputs:
       repos: list of {name, path, business, blog_glob}
+
+    On a dry-run, returns mock stats and never reads repos or calls Notion.
     """
+    if context.get("dry_run"):
+        return {"commits_scanned": 0, "blog_posts_logged": 0,
+                "errors": [], "dry_run": True}
+
     import subprocess
     repos = inputs.get("repos") or []
     dry = bool(context.get("dry_run"))
@@ -220,7 +242,14 @@ def git_sync(*, inputs: dict, context: dict) -> dict:
 # ─── notion-sync: stripe → Notion ───────────────────────────────────────
 
 def stripe_sync(*, inputs: dict, context: dict) -> dict:
-    """Poll recent Stripe subscription events and add to Notion."""
+    """Poll recent Stripe subscription events and add to Notion.
+
+    On a dry-run, returns mock stats and never calls the Stripe or Notion API.
+    """
+    if context.get("dry_run"):
+        return {"events_processed": 0, "contacts_added": 0, "deals_added": 0,
+                "skipped": False, "errors": [], "dry_run": True}
+
     import json
     import urllib.parse
     import urllib.request

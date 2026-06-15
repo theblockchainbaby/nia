@@ -9,7 +9,7 @@ import json
 import os
 import urllib.error
 import urllib.request
-from datetime import date, datetime
+from datetime import date
 from typing import Any
 
 

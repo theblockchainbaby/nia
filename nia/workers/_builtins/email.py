@@ -23,7 +23,29 @@ def sweep_recent(*, inputs: dict, context: dict) -> dict:
     Determines "unanswered" by cross-referencing inbox senders against the
     sent folder of the SAME account within the lookback window. No LLM,
     no judgment — pure set logic.
+
+    On a dry-run, returns representative mock data and never opens an IMAP
+    connection — `nia dry-run` must not touch a live account.
     """
+    if context.get("dry_run"):
+        now_iso = datetime.now(timezone.utc).isoformat()
+        return {
+            "accounts": [{"label": "example", "inbox_count": 2, "sent_count": 1}],
+            "unanswered_inbox": [
+                {"from": "customer@example.com", "from_name": "Sample Customer",
+                 "subject": "Re: onboarding question", "date_iso": now_iso,
+                 "account": "example"},
+            ],
+            "unanswered_count": 1,
+            "recently_sent": [
+                {"to": "lead@example.com", "subject": "Following up",
+                 "date_iso": now_iso, "account": "example"},
+            ],
+            "recently_sent_count": 1,
+            "inbox_total": 2,
+            "dry_run": True,
+        }
+
     raw_accounts = inputs.get("accounts") or []
     # If accounts is a string, treat it as a YAML file path that contains
     # a list under the `accounts` key. Keeps secrets out of the manifest.

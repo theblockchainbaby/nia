@@ -14,7 +14,7 @@ from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
-from .types import Run, RunStatus
+from .types import Run
 
 
 NIA_HOME = Path.home() / ".nia"

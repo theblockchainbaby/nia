@@ -1,7 +1,6 @@
 """Debug builtins. Useful for hello-world workers and runtime sanity checks."""
 from __future__ import annotations
 
-from typing import Any
 
 
 def echo(*, inputs: dict, context: dict) -> dict:
