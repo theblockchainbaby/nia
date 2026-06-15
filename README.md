@@ -61,6 +61,8 @@ Earlier this year, an AI agent on a team I know sent three promotional emails to
 
 Telling an agent "do not send emails" and not giving it a send-email key are not the same thing. The first is an instruction the model is free to misread under pressure. The second is a fact about the universe the model occupies.
 
+This is not hypothetical. Recent research shows refusal behavior in instruction tuned models is mediated by a single linear direction in the residual stream (Arditi et al., 2024), which means training a model to refuse something is a thin layer over the weights, not a structural property of them. Removing that direction takes hours of consumer GPU compute, and public tooling now automates the procedure for any open weight model. Closed weight frontier models served by API are not safer: prompt level jailbreaks at the input layer have been documented and reproduced repeatedly (Wei et al., 2023; Zou et al., 2023; Anil et al., 2024, the last published by Anthropic itself on its own models). The moment a model is deployed, the safety training defense is either compiled out at the weights or routed around at the prompt. Nia's runtime containment exists because the model layer defense is not load bearing at either layer it could exist at.
+
 Nia enforces the difference at the runtime layer:
 
 - **Capabilities are declared, not implied.** A worker can only call actions listed in its manifest. Nothing else exists.
