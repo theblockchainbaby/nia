@@ -160,7 +160,7 @@ What v0.2 ships on top of v0.1:
 - `builtin:claude.classify` is the first judgment-class builtin, called only through the manifest's declared `condition:` gate.
 - The `inbox-triage` worker uses it, runs hourly under launchd in production.
 - Soft permission enforcement: a worker manifest's `permissions:` block must cover what its builtins need; decorative permission lists are rejected at load time.
-- 73 tests, all passing on the public CI.
+- 75 tests, all passing on the public CI.
 
 ## Licensing
 

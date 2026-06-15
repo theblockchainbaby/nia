@@ -26,6 +26,15 @@ from nia.runtime.manifest import ManifestError, load
 from nia.runtime.registry import BUILTIN_WORKERS
 from nia.runtime.types import RunStatus
 from nia.workers._builtins import sensor, vision
+from nia.adapters import camera
+
+
+# A stand-in for a real capture so tests stay deterministic and never touch
+# actual hardware (CI has no camera).
+_FAKE_FRAME = {
+    "captured": True, "path": "/tmp/frame_test.jpg", "device": "0",
+    "captured_at": "2026-01-01T00:00:00+00:00", "bytes": 4096,
+}
 
 
 def _write(tmp_path: Path, contents: dict) -> Path:
@@ -141,21 +150,27 @@ def test_camera_skipped_when_no_motion(tmp_path, monkeypatch):
     assert "condition" in (glance.skipped_reason or "")
 
 
-def test_camera_fires_when_motion_present(tmp_path):
-    """Motion present on a real run → the gate opens and the camera step runs."""
+def test_camera_fires_and_captures_when_motion_present(tmp_path, monkeypatch):
+    """Motion present on a real run → the gate opens and the camera captures."""
+    monkeypatch.setattr(camera, "capture_frame", lambda **k: dict(_FAKE_FRAME))
+
     run = _run(tmp_path, simulate_motion=True, dry_run=False)
 
     glance = _glance(run)
     assert glance.status == RunStatus.SUCCESS
-    # No real lens is wired, so nothing is ever actually captured.
-    assert glance.results.get("captured") is False
+    assert glance.results.get("captured") is True
+    assert glance.results.get("path", "").endswith(".jpg")
 
 
 # ─── 4. dry run never opens the camera ───────────────────────────────────
 
 
-def test_dry_run_never_opens_camera(tmp_path):
+def test_dry_run_never_opens_camera(tmp_path, monkeypatch):
     """Even with the condition true, a dry run opens no camera and is labeled."""
+    def explode(**k):
+        raise AssertionError("dry run must not open the camera")
+    monkeypatch.setattr(camera, "capture_frame", explode)
+
     run = _run(tmp_path, simulate_motion=True, dry_run=True)
 
     glance = _glance(run)
@@ -176,18 +191,39 @@ def test_motion_event_reflects_detected_input():
     )["detected"] is False
 
 
-def test_vision_dry_run_opens_no_camera():
+def test_vision_dry_run_opens_no_camera(monkeypatch):
+    def explode(**k):
+        raise AssertionError("dry run must not open the camera")
+    monkeypatch.setattr(camera, "capture_frame", explode)
     out = vision.describe_frame(inputs={"reason": "x"}, context={"dry_run": True})
     assert out["captured"] is False
     assert out["dry_run"] is True
 
 
-def test_vision_real_run_captures_nothing_without_an_adapter():
-    """No camera adapter is wired yet, so a real run captures nothing and says so
-    rather than pretending. The containment point stands: this path is only
-    reachable under a granted permission and a true condition."""
+def test_vision_real_run_captures_a_frame(monkeypatch):
+    """A real run delegates to the adapter and reports the captured frame."""
+    monkeypatch.setattr(camera, "capture_frame", lambda **k: dict(_FAKE_FRAME))
+    out = vision.describe_frame(inputs={"reason": "door"}, context={"dry_run": False})
+    assert out["captured"] is True
+    assert out["path"].endswith(".jpg")
+    assert out["reason"] == "door"
+
+
+def test_vision_real_run_graceful_when_camera_unavailable(monkeypatch):
+    """If the adapter cannot capture, the builtin degrades to captured=False."""
+    def boom(**k):
+        raise camera.CameraError("no ffmpeg")
+    monkeypatch.setattr(camera, "capture_frame", boom)
     out = vision.describe_frame(inputs={"reason": "x"}, context={"dry_run": False})
     assert out["captured"] is False
+    assert "unavailable" in out["description"]
+
+
+def test_camera_adapter_raises_cleanly_without_ffmpeg(monkeypatch):
+    """The adapter raises CameraError, not a bare crash, when ffmpeg is missing."""
+    monkeypatch.setattr(camera.shutil, "which", lambda name: None)
+    with pytest.raises(camera.CameraError, match="ffmpeg"):
+        camera.capture_frame()
 
 
 # ─── the bundled worker must load ────────────────────────────────────────
