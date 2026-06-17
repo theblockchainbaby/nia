@@ -3,9 +3,15 @@
 The minimum viable executor for v0.1:
   - Load a manifest
   - Iterate actions in order
-  - For each: resolve impl, evaluate `when`, execute, capture result
-  - For judgment kind: also evaluate `condition` BEFORE running
+  - For each: ask the reference monitor to authorize the dispatch, and only on
+    ALLOW invoke the resolved impl, capturing the result
   - Persist the Run to ~/.nia/runs/<worker>/<id>.json
+
+Authorization is not done here. Every action passes through
+`monitor.authorize_action`, which folds capability and the `when`/`condition`
+gates into one decision and is the only thing that resolves an implementation.
+The executor can invoke an implementation only if the monitor returned ALLOW for
+that action. See nia/runtime/monitor.py.
 
 What's intentionally NOT in v0.1:
   - Parallel actions (sequential only; deterministic order)
@@ -18,25 +24,19 @@ adding them later does not break existing manifests.
 """
 from __future__ import annotations
 
-import importlib
 import os
 import traceback
 from typing import Any
 
-from . import condition, state
+from . import condition, monitor, state
 from .types import (
     Action,
-    ActionKind,
     ActionResult,
     Run,
     RunStatus,
     WorkerManifest,
     utc_now,
 )
-
-
-class ImplError(RuntimeError):
-    pass
 
 
 def execute(manifest: WorkerManifest, *, dry_run: bool = False,
@@ -64,7 +64,8 @@ def execute(manifest: WorkerManifest, *, dry_run: bool = False,
 
     try:
         for action in manifest.actions:
-            result = _run_action(action, ctx, dry_run=dry_run)
+            result = _run_action(action, ctx, dry_run=dry_run,
+                                 granted=manifest.permissions)
             run.actions.append(result)
             # Expose to subsequent `when` / `condition` evaluations.
             ctx["actions"][action.id] = {
@@ -88,45 +89,49 @@ def execute(manifest: WorkerManifest, *, dry_run: bool = False,
     return run
 
 
-def _run_action(action: Action, ctx: dict, *, dry_run: bool) -> ActionResult:
+def _run_action(action: Action, ctx: dict, *, dry_run: bool,
+                granted: list[str]) -> ActionResult:
     started = utc_now()
 
-    # `when` gate — applies to all action kinds.
-    if not condition.evaluate(action.when, ctx):
-        return ActionResult(
-            action_id=action.id,
-            kind=action.kind,
-            status=RunStatus.SKIPPED,
-            started_at=started,
-            finished_at=utc_now(),
-            skipped_reason=f"when={action.when!r} evaluated false",
-        )
+    # Mandatory mediation: the executor obtains a callable only through the
+    # monitor, and only on an ALLOW decision.
+    decision = monitor.authorize_action(action, ctx, granted=granted)
 
-    # `condition` gate — only judgment actions have one (enforced by parser).
-    if action.kind == ActionKind.JUDGMENT and action.condition is not None:
-        if not condition.evaluate(action.condition, ctx):
-            return ActionResult(
-                action_id=action.id,
-                kind=action.kind,
-                status=RunStatus.SKIPPED,
-                started_at=started,
-                finished_at=utc_now(),
-                skipped_reason=(
-                    f"judgment condition {action.condition!r} false, step not invoked"
-                ),
-            )
-
-    # Resolve and invoke the impl.
-    try:
-        fn = _resolve_impl(action.impl)
-    except Exception as e:
+    if decision.outcome is monitor.Outcome.DENY:
+        # A denial is a containment event, distinct from a skip.
         return ActionResult(
             action_id=action.id,
             kind=action.kind,
             status=RunStatus.FAILED,
             started_at=started,
             finished_at=utc_now(),
-            error=f"impl resolution failed: {e}",
+            error=f"denied: {decision.reason}",
+            audit=decision.audit,
+        )
+
+    if decision.outcome is monitor.Outcome.SKIP:
+        # The manifest allowed this action; a gate said not now. Normal flow.
+        return ActionResult(
+            action_id=action.id,
+            kind=action.kind,
+            status=RunStatus.SKIPPED,
+            started_at=started,
+            finished_at=utc_now(),
+            skipped_reason=decision.reason,
+            audit=decision.audit,
+        )
+
+    # ALLOW. A missing callable means resolution failed (a broken impl), which
+    # is an execution failure, not an authorization denial.
+    if decision.fn is None:
+        return ActionResult(
+            action_id=action.id,
+            kind=action.kind,
+            status=RunStatus.FAILED,
+            started_at=started,
+            finished_at=utc_now(),
+            error=decision.resolution_error or "impl resolution failed",
+            audit=decision.audit,
         )
 
     inputs = _render_inputs(action.inputs, ctx)
@@ -137,7 +142,7 @@ def _run_action(action: Action, ctx: dict, *, dry_run: bool) -> ActionResult:
     }
 
     try:
-        result_obj = fn(inputs=inputs, context=invocation_ctx)
+        result_obj = decision.fn(inputs=inputs, context=invocation_ctx)
         if not isinstance(result_obj, dict):
             result_obj = {"value": result_obj}
         return ActionResult(
@@ -147,6 +152,7 @@ def _run_action(action: Action, ctx: dict, *, dry_run: bool) -> ActionResult:
             started_at=started,
             finished_at=utc_now(),
             results=result_obj,
+            audit=decision.audit,
         )
     except Exception as e:
         return ActionResult(
@@ -156,23 +162,8 @@ def _run_action(action: Action, ctx: dict, *, dry_run: bool) -> ActionResult:
             started_at=started,
             finished_at=utc_now(),
             error=f"{type(e).__name__}: {e}\n{traceback.format_exc(limit=4)}",
+            audit=decision.audit,
         )
-
-
-def _resolve_impl(impl: str):
-    """`builtin:<module>.<fn>` → callable. file: scheme deferred to v0.2."""
-    if impl.startswith("builtin:"):
-        path = impl[len("builtin:"):]
-        if "." not in path:
-            raise ImplError(f"builtin impl must be `module.fn`, got {impl!r}")
-        module_path, fn_name = path.rsplit(".", 1)
-        mod = importlib.import_module(f"nia.workers._builtins.{module_path}")
-        if not hasattr(mod, fn_name):
-            raise ImplError(f"builtin {impl!r}: function {fn_name!r} not found")
-        return getattr(mod, fn_name)
-    if impl.startswith("file:"):
-        raise ImplError("file: impls not supported in v0.1 (coming v0.2)")
-    raise ImplError(f"unknown impl scheme: {impl!r}")
 
 
 def _render_inputs(inputs: dict, ctx: dict) -> dict:

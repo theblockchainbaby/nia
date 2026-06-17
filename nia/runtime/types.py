@@ -104,6 +104,9 @@ class ActionResult:
     skipped_reason: str | None = None
     # Judgment-only: actual cost incurred.
     cost_usd: float | None = None
+    # The reference monitor's authorization record for this dispatch
+    # (outcome, decided_by, required, granted, reason). Additive; persisted as-is.
+    audit: dict[str, Any] | None = None
 
 
 @dataclass
