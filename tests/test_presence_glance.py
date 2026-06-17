@@ -26,7 +26,7 @@ from nia.runtime.manifest import ManifestError, load
 from nia.runtime.registry import BUILTIN_WORKERS
 from nia.runtime.types import RunStatus
 from nia.workers._builtins import sensor, vision
-from nia.adapters import camera
+from nia.adapters import camera, presence
 
 
 # A stand-in for a real capture so tests stay deterministic and never touch
@@ -138,10 +138,13 @@ def _glance(run):
 
 
 def test_camera_skipped_when_no_motion(tmp_path, monkeypatch):
-    """No motion → the camera builtin must not even be invoked."""
+    """No presence → the camera builtin must not even be invoked."""
     def explode(*args, **kwargs):
         raise AssertionError("vision.describe_frame must not run when condition is false")
     monkeypatch.setattr(vision, "describe_frame", explode)
+    monkeypatch.setattr(presence, "read_presence", lambda **k: {
+        "detected": False, "idle_seconds": 60.0, "window_seconds": 5.0,
+        "signal": "hid", "read_at": None})
 
     run = _run(tmp_path, simulate_motion=False, dry_run=False)
 
@@ -151,7 +154,10 @@ def test_camera_skipped_when_no_motion(tmp_path, monkeypatch):
 
 
 def test_camera_fires_and_captures_when_motion_present(tmp_path, monkeypatch):
-    """Motion present on a real run → the gate opens and the camera captures."""
+    """Presence on a real run → the gate opens and the camera captures."""
+    monkeypatch.setattr(presence, "read_presence", lambda **k: {
+        "detected": True, "idle_seconds": 1.0, "window_seconds": 5.0,
+        "signal": "hid", "read_at": None})
     monkeypatch.setattr(camera, "capture_frame", lambda **k: dict(_FAKE_FRAME))
 
     run = _run(tmp_path, simulate_motion=True, dry_run=False)
@@ -166,10 +172,14 @@ def test_camera_fires_and_captures_when_motion_present(tmp_path, monkeypatch):
 
 
 def test_dry_run_never_opens_camera(tmp_path, monkeypatch):
-    """Even with the condition true, a dry run opens no camera and is labeled."""
+    """Even with the condition true, a dry run opens no camera and reads no
+    hardware sensor; both come from simulation, and the run is labeled."""
     def explode(**k):
         raise AssertionError("dry run must not open the camera")
     monkeypatch.setattr(camera, "capture_frame", explode)
+    def no_hw(**k):
+        raise AssertionError("dry run must not read the presence sensor")
+    monkeypatch.setattr(presence, "read_presence", no_hw)
 
     run = _run(tmp_path, simulate_motion=True, dry_run=True)
 
@@ -182,13 +192,38 @@ def test_dry_run_never_opens_camera(tmp_path, monkeypatch):
 # ─── builtin unit contracts ──────────────────────────────────────────────
 
 
-def test_motion_event_reflects_detected_input():
+def test_motion_event_dry_run_reflects_config():
+    """In dry run the signal is simulated from config and touches no hardware."""
     assert sensor.motion_event(
-        inputs={"source": "front-door", "detected": True}, context={},
+        inputs={"source": "front-door", "detected": True},
+        context={"dry_run": True},
     )["detected"] is True
     assert sensor.motion_event(
-        inputs={"source": "front-door"}, context={},
+        inputs={"source": "front-door"},
+        context={"dry_run": True},
     )["detected"] is False
+
+
+def test_motion_event_real_run_reads_presence(monkeypatch):
+    """A real run reads the presence adapter and records the idle decision."""
+    monkeypatch.setattr(presence, "read_presence", lambda **k: {
+        "detected": True, "idle_seconds": 1.2, "window_seconds": 5.0,
+        "signal": "hid", "read_at": None})
+    out = sensor.motion_event(inputs={"source": "desk"}, context={})
+    assert out["detected"] is True
+    assert out["signal"] == "hid"
+    assert out["idle_seconds"] == 1.2
+    assert "<=" in out["reason"]
+
+
+def test_motion_event_degrades_when_presence_unavailable(monkeypatch):
+    """If the adapter cannot read, the builtin degrades to detected=false."""
+    def boom(**k):
+        raise presence.PresenceError("ioreg not found")
+    monkeypatch.setattr(presence, "read_presence", boom)
+    out = sensor.motion_event(inputs={"source": "desk"}, context={})
+    assert out["detected"] is False
+    assert "unavailable" in out["reason"]
 
 
 def test_vision_dry_run_opens_no_camera(monkeypatch):
